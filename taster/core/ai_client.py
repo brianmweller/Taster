@@ -55,10 +55,42 @@ class AIResponse:
             except json.JSONDecodeError:
                 pass
 
+        # Try to recover truncated JSON arrays (e.g. from max_tokens cutoff)
+        if text_cleaned.lstrip().startswith('['):
+            recovered = self._recover_truncated_array(text_cleaned)
+            if recovered:
+                return recovered
+
         if fallback is not None:
             return fallback
 
         raise ValueError(f"Could not parse JSON from response: {self.text[:200]}")
+
+    @staticmethod
+    def _recover_truncated_array(text: str) -> Optional[list]:
+        """Recover complete objects from a truncated JSON array.
+
+        When a response hits max_tokens, the JSON array may be cut mid-object.
+        This extracts all fully-formed objects that were completed before truncation.
+        """
+        # Find all complete top-level objects in the array
+        items = []
+        depth = 0
+        obj_start = None
+        for i, ch in enumerate(text):
+            if ch == '{':
+                if depth == 0:
+                    obj_start = i
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0 and obj_start is not None:
+                    try:
+                        items.append(json.loads(text[obj_start:i + 1]))
+                    except json.JSONDecodeError:
+                        pass
+                    obj_start = None
+        return items if items else None
 
 
 class AIClient(ABC):

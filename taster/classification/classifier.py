@@ -203,13 +203,16 @@ class MediaClassifier:
                 # Placeholder text for failed images
                 content.append(f"[Image {i+1} failed to load]")
 
+        # Scale output tokens by burst size (~1024 tokens per photo entry)
+        burst_max_tokens = max(self.max_output_tokens, 1024 * len(burst_photos))
+
         # Define the API call as a callable for retry wrapper
         def call_gemini_burst() -> Dict[str, Any]:
             try:
                 result = self.client.generate_json(
                     prompt=content,
                     fallback=[self._create_fallback_response(f"API error", rank=i+1) for i in range(len(burst_photos))],
-                    generation_config={"max_output_tokens": self.max_output_tokens},
+                    generation_config={"max_output_tokens": burst_max_tokens},
                     handle_safety_errors=True
                 )
 
@@ -218,6 +221,15 @@ class MediaClassifier:
                     result = [self._validate_burst_response(r, i+1) for i, r in enumerate(result)]
                     # Return a wrapper dict for retry logic (check first result for errors)
                     return {"_burst_results": result, "is_error_fallback": False}
+                elif isinstance(result, list) and 0 < len(result) < len(burst_photos):
+                    # Partial result (likely truncated) — use what we got, fill the rest with fallbacks
+                    print(f"Partial burst response ({len(result)}/{len(burst_photos)} photos), padding with fallbacks")
+                    validated = [self._validate_burst_response(r, i+1) for i, r in enumerate(result)]
+                    for i in range(len(result), len(burst_photos)):
+                        validated.append(self._create_fallback_response(
+                            "Truncated burst response", rank=i+1, error_type="invalid_response"
+                        ))
+                    return {"_burst_results": validated, "is_error_fallback": False}
                 else:
                     # Invalid response format
                     print(f"Invalid burst response format, using fallback")
