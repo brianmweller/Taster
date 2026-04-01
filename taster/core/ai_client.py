@@ -39,6 +39,22 @@ class AIResponse:
         except json.JSONDecodeError:
             pass
 
+        # Try to find JSON array in text (must come before single-object search
+        # to avoid extracting one object from inside an array)
+        array_match = re.search(r'\[.*\]', text_cleaned, re.DOTALL)
+        if array_match:
+            try:
+                result = json.loads(array_match.group(0))
+                if isinstance(result, list):
+                    return result
+            except json.JSONDecodeError:
+                pass
+
+        # Try to recover truncated JSON arrays (e.g. from max_tokens cutoff)
+        recovered = self._recover_truncated_array(text_cleaned)
+        if recovered:
+            return recovered
+
         # Try to find JSON object in text
         json_match = re.search(r'\{[^{}]*\}', text_cleaned, re.DOTALL)
         if json_match:
@@ -55,12 +71,6 @@ class AIResponse:
             except json.JSONDecodeError:
                 pass
 
-        # Try to recover truncated JSON arrays (e.g. from max_tokens cutoff)
-        if text_cleaned.lstrip().startswith('['):
-            recovered = self._recover_truncated_array(text_cleaned)
-            if recovered:
-                return recovered
-
         if fallback is not None:
             return fallback
 
@@ -72,12 +82,18 @@ class AIResponse:
 
         When a response hits max_tokens, the JSON array may be cut mid-object.
         This extracts all fully-formed objects that were completed before truncation.
+        Only triggers if the text contains '[' (potential array start).
         """
-        # Find all complete top-level objects in the array
+        bracket_pos = text.find('[')
+        if bracket_pos == -1:
+            return None
+
+        # Find all complete top-level objects after the array opening bracket
         items = []
         depth = 0
         obj_start = None
-        for i, ch in enumerate(text):
+        for i in range(bracket_pos, len(text)):
+            ch = text[i]
             if ch == '{':
                 if depth == 0:
                     obj_start = i

@@ -203,8 +203,8 @@ class MediaClassifier:
                 # Placeholder text for failed images
                 content.append(f"[Image {i+1} failed to load]")
 
-        # Scale output tokens by burst size (~1024 tokens per photo entry)
-        burst_max_tokens = max(self.max_output_tokens, 1024 * len(burst_photos))
+        # Scale output tokens by burst size (~2048 tokens per photo entry)
+        burst_max_tokens = max(self.max_output_tokens, 2048 * len(burst_photos))
 
         # Define the API call as a callable for retry wrapper
         def call_gemini_burst() -> Dict[str, Any]:
@@ -355,7 +355,7 @@ class MediaClassifier:
                 result = self.client.generate_json(
                     prompt=[prompt, video_path],  # Path object will be uploaded
                     fallback=self._create_fallback_response("API error", is_video=True),
-                    generation_config={"max_output_tokens": self.max_output_tokens},
+                    generation_config={"max_output_tokens": max(self.max_output_tokens, 8192)},
                     handle_safety_errors=True
                 )
                 return self._validate_video_response(result)
@@ -409,7 +409,7 @@ class MediaClassifier:
                 result = self.client.generate_json(
                     prompt=[prompt, audio_path],  # Path will be uploaded by provider
                     fallback=self._create_fallback_response("API error", is_audio=True),
-                    generation_config={"max_output_tokens": self.max_output_tokens},
+                    generation_config={"max_output_tokens": max(self.max_output_tokens, 8192)},
                     handle_safety_errors=True
                 )
                 return self._validate_audio_response(result)

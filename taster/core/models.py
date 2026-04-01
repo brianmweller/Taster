@@ -3,9 +3,13 @@ import os
 import re
 import json
 import time
+import warnings
 from typing import Optional, Dict, Any, List, Union
 from pathlib import Path
 from PIL import Image
+
+# Suppress proto warning for unrecognized FinishReason enum values (e.g. 19)
+warnings.filterwarnings("ignore", message="Unrecognized FinishReason", category=UserWarning)
 
 from .ai_client import AIClient, AIResponse
 from ..compat import require
@@ -117,12 +121,13 @@ class GeminiClient(AIClient):
         # 3 = SAFETY
         # 4 = RECITATION
         # 5 = OTHER
+        # 19 = MALFORMED_FUNCTION_CALL (benign, response still usable)
         if candidate.finish_reason == 3:
             raise SafetyFilterError("Content blocked by safety filters")
         elif candidate.finish_reason == 2:
             # Max tokens - not necessarily an error, but log it
             print(f"Warning: Response reached max tokens")
-        elif candidate.finish_reason not in [1, 2]:
+        elif candidate.finish_reason not in [1, 2, 19]:
             print(f"Warning: Unusual finish reason: {candidate.finish_reason}")
 
         # Extract text - handle truncated responses gracefully
@@ -291,18 +296,32 @@ class GeminiClient(AIClient):
                 if FileTypeRegistry.is_video(item) or FileTypeRegistry.is_audio(item):
                     # Upload video/audio to Gemini and wait for processing
                     media_label = "Audio" if FileTypeRegistry.is_audio(item) else "Video"
-                    try:
-                        uploaded_file = self._genai.upload_file(str(item))
-                        # Wait for file to be ready (ACTIVE state)
-                        while uploaded_file.state.name == "PROCESSING":
-                            time.sleep(2)
-                            uploaded_file = self._genai.get_file(uploaded_file.name)
-                        if uploaded_file.state.name == "FAILED":
-                            print(f"Warning: {media_label} processing failed for {item}")
-                            continue
-                        result.append(uploaded_file)
-                    except Exception as e:
-                        print(f"Warning: Error uploading {media_label.lower()} {item}: {e}")
+                    uploaded = False
+                    for upload_attempt in range(3):
+                        try:
+                            uploaded_file = self._genai.upload_file(str(item))
+                            # Wait for file to be ready (ACTIVE state), with timeout
+                            wait_start = time.time()
+                            while uploaded_file.state.name == "PROCESSING":
+                                if time.time() - wait_start > 300:
+                                    print(f"Warning: {media_label} processing timed out for {item}")
+                                    break
+                                time.sleep(2)
+                                uploaded_file = self._genai.get_file(uploaded_file.name)
+                            if uploaded_file.state.name == "FAILED":
+                                print(f"Warning: {media_label} processing failed for {item}")
+                                break
+                            if uploaded_file.state.name == "ACTIVE":
+                                result.append(uploaded_file)
+                                uploaded = True
+                            break
+                        except Exception as e:
+                            if upload_attempt < 2:
+                                delay = 2 ** (upload_attempt + 1)
+                                print(f"Warning: {media_label} upload failed for {item.name}, retrying in {delay}s... ({e})")
+                                time.sleep(delay)
+                            else:
+                                print(f"Warning: Error uploading {media_label.lower()} {item}: {e}")
                 else:
                     # Load image
                     try:

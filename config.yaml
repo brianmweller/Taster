@@ -74,7 +74,7 @@ classification:
 
   # Number of parallel workers for photo and video processing
   parallel_photo_workers: 10
-  parallel_video_workers: 10
+  parallel_video_workers: 2
 
   # Routing thresholds (1-5 Likert score)
   share_threshold: 4          # Score >= 4 to Share
@@ -120,7 +120,7 @@ burst_detection:
 
   # Chunking for large bursts
   enable_chunking: true
-  chunk_size: 10              # Photos per chunk when processing large bursts
+  chunk_size: 5               # Photos per chunk when processing large bursts
 
 # ============================= QUALITY SCORING ====================================
 quality:
