@@ -123,6 +123,21 @@ class BurstDetectionConfig:
 
 
 @dataclass
+class DedupConfig:
+    """Perceptual hash (phash) duplicate detection configuration."""
+    enabled: bool = True
+    max_hamming_distance: int = 4
+    hash_size: int = 16
+
+    def __post_init__(self):
+        """Validate parameters."""
+        if self.max_hamming_distance < 0:
+            raise ValueError(f"max_hamming_distance must be >= 0, got {self.max_hamming_distance}")
+        if self.hash_size < 8:
+            raise ValueError(f"hash_size must be >= 8, got {self.hash_size}")
+
+
+@dataclass
 class QualityConfig:
     """Quality scoring configuration."""
     sharpness_weight: float = 0.8
@@ -257,6 +272,7 @@ class Config:
     file_types: FileTypeConfig = field(default_factory=FileTypeConfig)
     classification: ClassificationConfig = field(default_factory=ClassificationConfig)
     burst_detection: BurstDetectionConfig = field(default_factory=BurstDetectionConfig)
+    dedup: DedupConfig = field(default_factory=DedupConfig)
     quality: QualityConfig = field(default_factory=QualityConfig)
     caching: CachingConfig = field(default_factory=CachingConfig)
     performance: PerformanceConfig = field(default_factory=PerformanceConfig)
@@ -275,6 +291,7 @@ class Config:
             file_types=FileTypeConfig(**data.get("file_types", {})),
             classification=ClassificationConfig(**data.get("classification", {})),
             burst_detection=BurstDetectionConfig(**data.get("burst_detection", {})),
+            dedup=DedupConfig(**data.get("dedup", {})),
             quality=QualityConfig(**data.get("quality", {})),
             caching=CachingConfig(**data.get("caching", {})),
             performance=PerformanceConfig(**data.get("performance", {})),
@@ -343,6 +360,7 @@ def save_config(config: Config, config_path: Path):
         "file_types": asdict(config.file_types),
         "classification": asdict(config.classification),
         "burst_detection": asdict(config.burst_detection),
+        "dedup": asdict(config.dedup),
         "quality": asdict(config.quality),
         "caching": asdict(config.caching),
         "performance": asdict(config.performance),

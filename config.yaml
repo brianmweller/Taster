@@ -122,6 +122,15 @@ burst_detection:
   enable_chunking: true
   chunk_size: 5               # Photos per chunk when processing large bursts
 
+# ============================= DUPLICATE DETECTION ================================
+dedup:
+  # Perceptual hash (phash) duplicate detection — catches the same image
+  # recompressed, resized, or reformatted (WhatsApp re-sends, motion_photo
+  # extracts, etc.) without false-positiving on similar-but-different shots.
+  enabled: true
+  max_hamming_distance: 4      # Max bit flips to consider duplicate (0 = exact, 4 = lenient)
+  hash_size: 16                # 16 → 256-bit hashes (very precise)
+
 # ============================= QUALITY SCORING ====================================
 quality:
   # Quality score weights

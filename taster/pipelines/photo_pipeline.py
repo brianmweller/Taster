@@ -14,6 +14,7 @@ from ..core.file_utils import FileTypeRegistry
 from ..core.profiles import TasteProfile
 from ..features.embeddings import EmbeddingExtractor
 from ..features.burst_detector import BurstDetector
+from ..features.dedup_detector import DuplicateDetector
 from ..classification.prompt_builder import PromptBuilder
 from ..classification.classifier import MediaClassifier
 from ..classification.routing import Router
@@ -138,14 +139,18 @@ class PhotoPipeline(ClassificationPipeline):
         if images:
             print(f"\nProcessing {len(images)} images...")
             features = self.extract_features(images)
+
+            # Dedup: remove near-duplicates before classification (saves Gemini calls)
+            images, features, dupe_results = self._dedup(images, features, output_folder, dry_run)
+
             groups = self.group_files(images, features)
             results = self.classify(groups, features)
             routed = self.route(results)
             if not dry_run:
                 self.move_files(routed, output_folder)
             image_result = ClassificationResult(
-                results=routed,
-                stats=self.compute_stats(routed),
+                results=routed + dupe_results,
+                stats=self.compute_stats(routed + dupe_results),
             )
 
         # Process videos
@@ -160,6 +165,36 @@ class PhotoPipeline(ClassificationPipeline):
                 video_result = self._copy_videos(videos, output_folder, dry_run)
 
         return image_result.merge(video_result)
+
+    def _dedup(self, images, features, output_folder, dry_run):
+        """Remove near-duplicate images, routing them to Storage."""
+        detector = DuplicateDetector(self.config.dedup)
+        embeddings = features.get("embeddings")
+        unique_files, unique_embeddings, dupes = detector.detect(images, embeddings)
+
+        dupe_results = []
+        if dupes:
+            # Route duplicates straight to Storage
+            dupe_routed = [
+                {
+                    "path": p,
+                    "burst_size": 1,
+                    "burst_index": -1,
+                    "classification": {
+                        "classification": "Storage",
+                        "score": 0,
+                        "reasoning": "Near-duplicate (phash)",
+                    },
+                    "destination": "Storage",
+                }
+                for p in dupes
+            ]
+            if not dry_run:
+                self.move_files(dupe_routed, output_folder)
+            dupe_results = dupe_routed
+
+        features = {"embeddings": unique_embeddings, "images": unique_files}
+        return unique_files, features, dupe_results
 
     def _classify_single_video(self, video, classifier, router):
         """Classify a single video. Thread-safe."""
