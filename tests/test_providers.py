@@ -386,7 +386,7 @@ class TestModelConfigCompat:
     def test_from_yaml_with_new_fields(self):
         config = Config.from_dict({
             "model": {
-                "name": "gemini-3-flash-preview",
+                "name": "gemini-3.8-flash",
                 "provider": "openai",
                 "openai_model": "gpt-4o",
             },

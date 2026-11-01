@@ -67,8 +67,17 @@ class MixedPipeline(ClassificationPipeline):
             classify_videos: Whether to classify video files.
             classify_bundles: True = force bundles, False = disable,
                 None = auto-detect (classify subfolders as bundles if present).
+
+        Raises:
+            FatalAPIError: On billing/auth/model errors or a tripped circuit breaker.
+                Files already classified are cached, so a re-run resumes cheaply.
         """
         combined = ClassificationResult()
+
+        # Fail fast on billing/auth/model problems before touching any files
+        if self.config.classification.preflight_check and self.gemini_client is not None:
+            print("\nPreflight: checking API key, billing and model...")
+            self.gemini_client.preflight()
 
         # Auto-detect bundles: if not explicitly set, check for subfolders
         if classify_bundles is None:

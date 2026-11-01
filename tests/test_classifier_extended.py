@@ -296,7 +296,9 @@ class TestClassifyBurst:
         ]  # Only 1 result for 2 photos
         result = classifier.classify_burst([Path("a.jpg"), Path("b.jpg")])
         assert len(result) == 2
-        assert all(r["is_error_fallback"] for r in result)
+        # Partial (truncated) responses keep what came back and pad the rest
+        assert not result[0].get("is_error_fallback")
+        assert result[1]["is_error_fallback"]
 
     @patch("taster.classification.classifier.ImageUtils")
     def test_burst_chunking(self, mock_utils, classifier, mock_client):

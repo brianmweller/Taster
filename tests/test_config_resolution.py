@@ -17,7 +17,7 @@ class TestLoadConfigResolution:
         with patch("taster.dirs.get_config_dir", return_value=tmp_path / "empty"):
             config = load_config()
         assert isinstance(config, Config)
-        assert config.model.name == "gemini-3-flash-preview"
+        assert config.model.name == "gemini-3.8-flash"
 
     def test_loads_from_explicit_path(self, tmp_path):
         cfg = tmp_path / "custom.yaml"

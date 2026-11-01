@@ -124,7 +124,7 @@ Extract ONLY what's clearly stated or strongly implied. Be specific and concrete
         return None
 
     try:
-        model = genai.GenerativeModel('gemini-3-flash-preview')
+        model = genai.GenerativeModel('gemini-3.8-flash')
         response = model.generate_content(prompt)
         text = response.text.strip()
 
@@ -217,7 +217,7 @@ Respond with JSON:
 Be specific and concrete. Look for patterns across ALL photos."""
 
     try:
-        model = genai.GenerativeModel('gemini-3-flash-preview')
+        model = genai.GenerativeModel('gemini-3.8-flash')
         content = [prompt] + images
 
         import time
@@ -316,7 +316,7 @@ Respond with JSON:
 Be specific. Look for patterns across ALL photos."""
 
     try:
-        model = genai.GenerativeModel('gemini-3-flash-preview')
+        model = genai.GenerativeModel('gemini-3.8-flash')
         content = [prompt] + images
 
         import time
@@ -396,7 +396,7 @@ Create a comprehensive taste profile as JSON:
 Synthesize insights across all three analyses. Be specific, concrete, and actionable."""
 
     try:
-        model = genai.GenerativeModel('gemini-3-flash-preview')
+        model = genai.GenerativeModel('gemini-3.8-flash')
         response = model.generate_content(prompt)
         text = response.text.strip()
 

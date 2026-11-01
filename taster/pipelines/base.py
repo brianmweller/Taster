@@ -18,9 +18,9 @@ _VIDEO_BITRATE_BPS = 12_000_000  # 12 Mbps typical phone video
 _PROMPT_TOKENS = 1000  # average prompt size
 _OUTPUT_TOKENS = 300  # average output size
 
-# Gemini Flash pricing per 1M tokens
-_INPUT_PRICE_PER_M = 0.30
-_OUTPUT_PRICE_PER_M = 1.20
+# Gemini 3.8 Flash pricing per 1M tokens (standard paid tier, Oct 2026)
+_INPUT_PRICE_PER_M = 0.75
+_OUTPUT_PRICE_PER_M = 3.75
 
 
 @dataclass

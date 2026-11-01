@@ -26,9 +26,9 @@ class TestInfrastructureIntegration:
         """Test configuration loads successfully."""
         config = load_config(Path("config.yaml"))
 
-        assert config.model.name == "gemini-3-flash-preview"
+        assert config.model.name == "gemini-3.8-flash"
         assert config.classification.classify_videos is True
-        assert config.classification.parallel_video_workers == 10
+        assert config.classification.parallel_video_workers == 2
 
     def test_cache_manager_initialization(self, tmp_path):
         """Test cache manager initializes correctly."""

@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from ..core.config import Config
 from ..core.cache import CacheManager
-from ..core.ai_client import AIClient
+from ..core.ai_client import AIClient, FatalAPIError
 from ..core.file_utils import FileTypeRegistry
 from ..core.profiles import TasteProfile
 from ..features.embeddings import EmbeddingExtractor
@@ -102,10 +102,15 @@ class PhotoPipeline(ClassificationPipeline):
                 executor.submit(self._classify_group, group, classifier): idx
                 for idx, group in enumerate(groups)
             }
-            with tqdm(total=len(groups), desc="Processing bursts/singletons") as pbar:
-                for future in as_completed(futures):
-                    results.extend(future.result())
-                    pbar.update(1)
+            try:
+                with tqdm(total=len(groups), desc="Processing bursts/singletons") as pbar:
+                    for future in as_completed(futures):
+                        results.extend(future.result())
+                        pbar.update(1)
+            except FatalAPIError:
+                # Don't burn through the queue once the run is doomed
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise
 
         return results
 
@@ -219,10 +224,14 @@ class PhotoPipeline(ClassificationPipeline):
         results = []
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {executor.submit(self._classify_single_video, v, classifier, router): v for v in videos}
-            with tqdm(total=len(videos), desc="Classifying videos") as pbar:
-                for future in as_completed(futures):
-                    results.append(future.result())
-                    pbar.update(1)
+            try:
+                with tqdm(total=len(videos), desc="Classifying videos") as pbar:
+                    for future in as_completed(futures):
+                        results.append(future.result())
+                        pbar.update(1)
+            except FatalAPIError:
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise
 
         if not dry_run:
             self.move_files(results, output_folder)

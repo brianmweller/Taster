@@ -4,7 +4,7 @@
 # ============================= MODEL SETTINGS =====================================
 model:
   # Gemini model to use for classification
-  name: "gemini-3-flash-preview"
+  name: "gemini-3.8-flash"
 
   # Maximum output tokens for API responses (increase if hitting truncation)
   max_output_tokens: 4096
@@ -103,6 +103,12 @@ classification:
     - "timeout"                # Request timeouts
     - "rate_limit"             # Rate limit exceeded
 
+  # Failure safeguards (billing/auth/missing-model errors always stop the run)
+  preflight_check: true            # One tiny API call before the run to verify key, billing and model
+  circuit_breaker_window: 20       # Number of recent API calls to watch
+  circuit_breaker_error_rate: 0.5  # Abort if this fraction of the window failed (0 disables)
+  error_destination: "Errors"      # Folder for files that failed classification (null = profile default)
+
 # ============================= BURST DETECTION ====================================
 burst_detection:
   # Enable new burst detection (temporal + visual)
@@ -200,13 +206,13 @@ training:
 
 # ============================= COST ESTIMATION ====================================
 cost:
-  # Gemini 3 Flash pricing (as of Dec 2025)
-  per_1m_input_tokens: 0.50   # $0.50 per 1M input tokens
-  per_1m_output_tokens: 3.00  # $3.00 per 1M output tokens
+  # Gemini 3.8 Flash pricing (standard paid tier, as of Oct 2026)
+  per_1m_input_tokens: 0.75   # $0.75 per 1M input tokens
+  per_1m_output_tokens: 3.75  # $3.75 per 1M output tokens
 
   # Estimated costs (including prompt + output)
-  per_photo: 0.0013           # ~$0.0013 per singleton photo
-  per_burst_photo: 0.00043    # ~$0.00043 per photo in burst (shared prompt)
+  per_photo: 0.0018           # ~$0.0018 per singleton photo
+  per_burst_photo: 0.0006     # ~$0.0006 per photo in burst (shared prompt)
 
   # Video costs
   tokens_per_video_second: 300  # Visual tokens per second

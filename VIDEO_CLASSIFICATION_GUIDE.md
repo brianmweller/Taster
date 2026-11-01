@@ -6,7 +6,7 @@ Your LLM photo classification script now supports **video classification** using
 
 ## How It Works
 
-- **Same model**: Uses `gemini-3-flash-preview` (same as for photos)
+- **Same model**: Uses `gemini-3.8-flash` (same as for photos)
 - **Files API**: Videos are uploaded to Gemini, processed, then analyzed
 - **Same categories**: Share, Storage, or Ignore
 - **Video-specific**: Also evaluates audio quality and video quality
@@ -61,12 +61,12 @@ The script automatically estimates cost **before** processing:
    💡 RECOMMENDATION: Test with 10-20 videos first to verify accuracy
 ```
 
-### Actual Gemini 3 Flash Pricing (Dec 2025)
+### Gemini 3.8 Flash Pricing (Oct 2026)
 
 From https://ai.google.dev/gemini-api/docs/pricing:
 
-- **Input tokens**: $0.50 per 1M tokens (text/image/video)
-- **Output tokens**: $3.00 per 1M tokens (JSON responses)
+- **Input tokens**: $0.75 per 1M tokens (text/image/video)
+- **Output tokens**: $3.75 per 1M tokens (JSON responses)
 
 ### Cost Breakdown Per Video
 
@@ -74,9 +74,9 @@ From https://ai.google.dev/gemini-api/docs/pricing:
 - Input: 60 sec × 300 tokens/sec = 18,000 visual tokens
 - Input: +1,500 tokens (rich taste profile prompt)
 - Output: +300 tokens (JSON with reasoning)
-- **Input cost**: 19,500 × $0.50 / 1M = $0.00975
-- **Output cost**: 300 × $3.00 / 1M = $0.0009
-- **Total: ~$0.011 per minute of video**
+- **Input cost**: 19,500 × $0.75 / 1M = $0.0146
+- **Output cost**: 300 × $3.75 / 1M = $0.0011
+- **Total: ~$0.016 per minute of video**
 
 ### Real-World Examples
 

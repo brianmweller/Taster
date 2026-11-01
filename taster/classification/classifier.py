@@ -1,11 +1,13 @@
 """Unified classifier for photos, videos, and documents."""
+import threading
 import time
+from collections import deque
 import numpy as np
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Callable
 from tqdm import tqdm
 
-from ..core.ai_client import AIClient
+from ..core.ai_client import AIClient, FatalAPIError, ClassificationAborted
 from ..core.config import Config
 from ..core.cache import CacheManager, CacheKey
 from ..core.file_utils import ImageUtils
@@ -44,6 +46,11 @@ class MediaClassifier:
         self.cache_manager = cache_manager
         self.profile = profile
         self.max_output_tokens = config.model.max_output_tokens
+
+        # Circuit breaker: sliding window of recent API outcomes (True = error)
+        window = config.classification.circuit_breaker_window
+        self._recent_errors: deque = deque(maxlen=max(window, 1))
+        self._breaker_lock = threading.Lock()
 
     @property
     def _default_category(self) -> str:
@@ -108,7 +115,7 @@ class MediaClassifier:
         # Check cache
         if use_cache and self.cache_manager is not None:
             cache_key = CacheKey.from_file(photo_path)
-            cached = self.cache_manager.get("gemini", cache_key)
+            cached = self._get_cached(cache_key)
             if cached is not None:
                 return cached
 
@@ -130,6 +137,8 @@ class MediaClassifier:
                     handle_safety_errors=True
                 )
                 return self._validate_singleton_response(result)
+            except FatalAPIError:
+                raise
             except Exception as e:
                 print(f"Classification error for {photo_path.name}: {e}")
                 return self._create_fallback_response(f"Error: {e}")
@@ -137,10 +146,10 @@ class MediaClassifier:
         # Call with retry
         result = self._execute_with_retry(call_gemini, f"Singleton {photo_path.name}")
 
-        # Cache result (even error fallbacks, to avoid repeated failures)
+        # Cache result (transient API failures are skipped so a re-run retries them)
         if use_cache and self.cache_manager is not None:
             cache_key = CacheKey.from_file(photo_path)
-            self.cache_manager.set("gemini", cache_key, result)
+            self._cache_result(cache_key, result)
 
         return result
 
@@ -177,7 +186,7 @@ class MediaClassifier:
         # Check cache
         if use_cache and self.cache_manager is not None:
             cache_key = CacheKey.from_files(burst_photos)
-            cached = self.cache_manager.get("gemini", cache_key)
+            cached = self._get_cached(cache_key)
             if cached is not None and len(cached) == len(burst_photos):
                 return cached
 
@@ -239,6 +248,8 @@ class MediaClassifier:
                     ]
                     return {"_burst_results": fallback_results, "is_error_fallback": True, "error_type": "invalid_response"}
 
+            except FatalAPIError:
+                raise
             except Exception as e:
                 print(f"Burst classification error: {e}")
                 fallback_results = [
@@ -276,7 +287,7 @@ class MediaClassifier:
 
         # Cache gemini result
         if use_cache and self.cache_manager is not None:
-            self.cache_manager.set("gemini", burst_id, result)
+            self._cache_result(burst_id, result)
 
         return result
 
@@ -342,7 +353,7 @@ class MediaClassifier:
         # Check cache
         if use_cache and self.cache_manager is not None:
             cache_key = CacheKey.from_file(video_path)
-            cached = self.cache_manager.get("gemini", cache_key)
+            cached = self._get_cached(cache_key)
             if cached is not None:
                 return cached
 
@@ -359,6 +370,8 @@ class MediaClassifier:
                     handle_safety_errors=True
                 )
                 return self._validate_video_response(result)
+            except FatalAPIError:
+                raise
             except Exception as e:
                 print(f"Video classification error for {video_path.name}: {e}")
                 return self._create_fallback_response(f"Error: {e}", is_video=True)
@@ -369,7 +382,7 @@ class MediaClassifier:
         # Cache result
         if use_cache and self.cache_manager is not None:
             cache_key = CacheKey.from_file(video_path)
-            self.cache_manager.set("gemini", cache_key, result)
+            self._cache_result(cache_key, result)
 
         return result
 
@@ -396,7 +409,7 @@ class MediaClassifier:
         # Check cache
         if use_cache and self.cache_manager is not None:
             cache_key = CacheKey.from_file(audio_path)
-            cached = self.cache_manager.get("gemini", cache_key)
+            cached = self._get_cached(cache_key)
             if cached is not None:
                 return cached
 
@@ -413,6 +426,8 @@ class MediaClassifier:
                     handle_safety_errors=True
                 )
                 return self._validate_audio_response(result)
+            except FatalAPIError:
+                raise
             except Exception as e:
                 print(f"Audio classification error for {audio_path.name}: {e}")
                 return self._create_fallback_response(f"Error: {e}", is_audio=True)
@@ -423,7 +438,7 @@ class MediaClassifier:
         # Cache result
         if use_cache and self.cache_manager is not None:
             cache_key = CacheKey.from_file(audio_path)
-            self.cache_manager.set("gemini", cache_key, result)
+            self._cache_result(cache_key, result)
 
         return result
 
@@ -493,7 +508,7 @@ class MediaClassifier:
         # Check cache
         if use_cache and self.cache_manager is not None:
             cache_key = CacheKey.from_file(doc_path)
-            cached = self.cache_manager.get("gemini", cache_key)
+            cached = self._get_cached(cache_key)
             if cached is not None:
                 return cached
 
@@ -528,6 +543,8 @@ class MediaClassifier:
                     handle_safety_errors=True
                 )
                 return self._validate_document_response(result)
+            except FatalAPIError:
+                raise
             except Exception as e:
                 print(f"Warning: Document classification error for {doc_path.name}: {e}")
                 return self._create_fallback_response(f"Error: {e}")
@@ -537,7 +554,7 @@ class MediaClassifier:
         # Cache result
         if use_cache and self.cache_manager is not None:
             cache_key = CacheKey.from_file(doc_path)
-            self.cache_manager.set("gemini", cache_key, result)
+            self._cache_result(cache_key, result)
 
         return result
 
@@ -568,7 +585,7 @@ class MediaClassifier:
         # Check cache
         if use_cache and self.cache_manager is not None:
             cache_key = CacheKey.from_files(docs)
-            cached = self.cache_manager.get("gemini", cache_key)
+            cached = self._get_cached(cache_key)
             if cached is not None and len(cached) == len(docs):
                 return cached
 
@@ -605,6 +622,8 @@ class MediaClassifier:
                         for i in range(len(docs))
                     ]
                     return {"_group_results": fallback, "is_error_fallback": True, "error_type": "invalid_response"}
+            except FatalAPIError:
+                raise
             except Exception as e:
                 fallback = [self._create_fallback_response(f"Error: {e}", rank=i+1) for i in range(len(docs))]
                 return {"_group_results": fallback, "is_error_fallback": True, "error_type": "api_error"}
@@ -617,7 +636,7 @@ class MediaClassifier:
         # Cache
         if use_cache and self.cache_manager is not None:
             cache_key = CacheKey.from_files(docs)
-            self.cache_manager.set("gemini", cache_key, result)
+            self._cache_result(cache_key, result)
 
         return result
 
@@ -648,7 +667,7 @@ class MediaClassifier:
         # Check cache
         if use_cache and self.cache_manager is not None:
             cache_key = CacheKey.from_files(files)
-            cached = self.cache_manager.get("gemini", cache_key)
+            cached = self._get_cached(cache_key)
             if cached is not None:
                 return cached
 
@@ -693,6 +712,8 @@ class MediaClassifier:
                     handle_safety_errors=True,
                 )
                 return self._validate_document_response(result)
+            except FatalAPIError:
+                raise
             except Exception as e:
                 print(f"Warning: Bundle classification error for {bundle_name}: {e}")
                 return self._create_fallback_response(f"Error: {e}")
@@ -702,7 +723,7 @@ class MediaClassifier:
         # Cache
         if use_cache and self.cache_manager is not None:
             cache_key = CacheKey.from_files(files)
-            self.cache_manager.set("gemini", cache_key, result)
+            self._cache_result(cache_key, result)
 
         return result
 
@@ -795,6 +816,54 @@ class MediaClassifier:
 
         return response
 
+    # Error types caused by the API call itself rather than the file's content.
+    # These are not cached, so the next run retries them.
+    _TRANSIENT_ERROR_TYPES = ("api_error", "timeout", "rate_limit")
+
+    def _has_transient_error(self, result: Any) -> bool:
+        """True if a result (or any item of a burst/group result) is a transient API failure."""
+        items = result if isinstance(result, list) else [result]
+        return any(
+            isinstance(r, dict) and r.get("is_error_fallback") and r.get("error_type") in self._TRANSIENT_ERROR_TYPES
+            for r in items
+        )
+
+    def _get_cached(self, cache_key: str) -> Any:
+        """Return a cached classification, ignoring transient failures cached by older versions."""
+        cached = self.cache_manager.get("gemini", cache_key)
+        if cached is not None and self._has_transient_error(cached):
+            return None
+        return cached
+
+    def _cache_result(self, cache_key: str, result: Any) -> None:
+        """Cache a classification unless it contains a transient API failure."""
+        if not self._has_transient_error(result):
+            self.cache_manager.set("gemini", cache_key, result)
+
+    def _record_outcome(self, result: Dict[str, Any]) -> None:
+        """Track API outcomes and abort the run if the error rate is too high.
+
+        Raises:
+            ClassificationAborted: If at least ``circuit_breaker_error_rate`` of the
+                last ``circuit_breaker_window`` API calls fell back on errors.
+        """
+        threshold = self.config.classification.circuit_breaker_error_rate
+        if threshold <= 0:
+            return
+        is_error = bool(result.get("is_error_fallback")) and result.get("error_type") != "load_error"
+        with self._breaker_lock:
+            self._recent_errors.append(is_error)
+            window = self._recent_errors.maxlen
+            if len(self._recent_errors) < window:
+                return
+            errors = sum(self._recent_errors)
+            if errors / window >= threshold:
+                latest = result.get("error_message") or result.get("reasoning", "")
+                raise ClassificationAborted(
+                    f"{errors} of the last {window} API calls failed "
+                    f"(latest: {str(latest)[:300]}). Aborting run."
+                )
+
     def _execute_with_retry(
         self,
         classify_fn: Callable[[], Dict[str, Any]],
@@ -809,7 +878,20 @@ class MediaClassifier:
 
         Returns:
             Classification result dict with retry_count updated.
+
+        Raises:
+            FatalAPIError: On billing/auth/model errors, or when the circuit breaker trips.
         """
+        result = self._retry_loop(classify_fn, error_context)
+        self._record_outcome(result)
+        return result
+
+    def _retry_loop(
+        self,
+        classify_fn: Callable[[], Dict[str, Any]],
+        error_context: str
+    ) -> Dict[str, Any]:
+        """Run classify_fn, retrying retriable error fallbacks with exponential backoff."""
         max_retries = self.config.classification.classification_retries
         retry_delay = self.config.classification.retry_delay_seconds
         retriable_errors = set(self.config.classification.retry_on_errors)
@@ -833,6 +915,8 @@ class MediaClassifier:
                 result["retry_count"] = attempt
                 return result
 
+            except FatalAPIError:
+                raise
             except Exception as e:
                 # Unexpected exception - create fallback and potentially retry
                 last_result = self._create_fallback_response(f"Error: {e}", error_type="api_error")

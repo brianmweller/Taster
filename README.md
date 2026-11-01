@@ -394,17 +394,17 @@ Local models are slower than cloud APIs and may produce lower-quality classifica
 
 ## Cost Estimates
 
-Gemini 3 Flash pricing (cheapest provider):
+Gemini 3.8 Flash pricing (cheapest provider):
 
 | Item | Cost |
 |------|------|
-| Photo | ~$0.0013 |
-| Burst photo | ~$0.00043 (shared prompt) |
-| Video | ~$0.011 per minute |
-| Audio | ~$0.006 per minute |
-| Document | ~$0.002-0.01 (varies by size) |
+| Photo | ~$0.0018 |
+| Burst photo | ~$0.0006 (shared prompt) |
+| Video | ~$0.016 per minute |
+| Audio | ~$0.009 per minute |
+| Document | ~$0.003-0.015 (varies by size) |
 
-**Example:** 1,000 photos = ~$1.30 (first run), ~$0 (cached re-run).
+**Example:** 1,000 photos = ~$1.80 (first run), ~$0 (cached re-run).
 
 OpenAI and Anthropic cost more per call. See provider pricing pages for current rates.
 
@@ -417,7 +417,7 @@ All settings are in `config.yaml`. Key sections:
 ```yaml
 model:
   provider: null          # null = auto-detect. Options: gemini, openai, anthropic, local
-  name: "gemini-3-flash-preview"
+  name: "gemini-3.8-flash"
   openai_model: "gpt-5.2"
   anthropic_model: "claude-sonnet-4-6"
   local_model: "llama3.2"
@@ -476,6 +476,7 @@ MyFolder_sorted/
 ├── Storage/                     # Keep but don't share
 ├── Review/                      # Needs manual review
 ├── Ignore/                      # Not relevant
+├── Errors/                      # Classification failed (API error) -- re-run to retry
 └── Reports/                     # Classification logs + summary
 ```
 
@@ -499,7 +500,17 @@ Automatic retry with exponential backoff for API failures.
 | `safety_blocked` | No | Content blocked by safety filters |
 | `load_error` | No | Failed to load file |
 
-Reprocess failures:
+Files whose classification failed go to `Errors/` rather than the default category (`classification.error_destination`; set to `null` for the old behavior). Transient API failures are never cached, so simply re-running the folder retries them.
+
+**Fail-fast safeguards** -- so a broken account can't silently dump a whole folder into one category:
+
+- **Fatal errors stop the run:** billing (e.g. Gemini "prepayment credits are depleted"), invalid API key, permission denied, or a retired/unknown model abort immediately with an explanation. No retries, nothing cached.
+- **Preflight check:** one tiny API call before any files are processed (`classification.preflight_check`).
+- **Circuit breaker:** aborts if at least half of the last 20 API calls failed (`circuit_breaker_window`, `circuit_breaker_error_rate`; set the rate to `0` to disable).
+
+Results classified before an abort stay cached, so the re-run only pays for what's left.
+
+Reprocess failures from older reports:
 ```bash
 python clear_failed_for_retry.py "path/to/sorted" --dry-run  # Preview
 python clear_failed_for_retry.py "path/to/sorted"            # Clear and re-run
@@ -563,6 +574,6 @@ pytest tests/ --cov=taster --cov-report=html     # With coverage
 
 Built with Google Gemini, OpenAI, Anthropic, OpenCLIP, sentence-transformers, FastAPI, MCP SDK, Gradio, and Claude Code.
 
-**Version:** 3.6.8 | **PyPI:** [`taster`](https://pypi.org/project/taster/) | **Last Updated:** April 2026
+**Version:** 3.7.0 | **PyPI:** [`taster`](https://pypi.org/project/taster/) | **Last Updated:** October 2026
 
 <p align="center">Built by <a href="https://github.com/brianmweller">@brianmweller</a></p>

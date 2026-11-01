@@ -8,6 +8,53 @@ from typing import Any, Dict, List, Optional, Union
 from PIL import Image
 
 
+class FatalAPIError(Exception):
+    """Unrecoverable provider error (billing, auth, missing model).
+
+    Retrying cannot succeed, so the run must stop instead of routing every
+    file to a fallback category.
+    """
+    pass
+
+
+class ClassificationAborted(FatalAPIError):
+    """Raised when the error-rate circuit breaker trips mid-run."""
+    pass
+
+
+# Substrings (lowercased) that mark an error as unrecoverable across providers.
+_FATAL_ERROR_PATTERNS = (
+    # Billing / credits
+    "credits are depleted",          # Gemini prepay
+    "prepayment",
+    "billing",
+    "insufficient_quota",            # OpenAI
+    "credit balance is too low",     # Anthropic
+    # Authentication / authorization
+    "api key not valid",
+    "api_key_invalid",
+    "invalid api key",
+    "invalid x-api-key",
+    "incorrect api key",
+    "unauthenticated",
+    "permission_denied",
+    "permission denied",
+    "authentication_error",
+    # Model retired or misnamed
+    "is not found for api version",
+    "model_not_found",
+    "not_found_error",
+)
+
+
+def is_fatal_api_error(error: Union[BaseException, str]) -> bool:
+    """Return True if an API error cannot be fixed by retrying."""
+    if isinstance(error, FatalAPIError):
+        return True
+    text = str(error).lower()
+    return any(p in text for p in _FATAL_ERROR_PATTERNS)
+
+
 class AIResponse:
     """Parsed response from an AI provider."""
 
@@ -135,6 +182,27 @@ class AIClient(ABC):
     ) -> Dict[str, Any]:
         """Generate content and parse as JSON."""
         ...
+
+    def preflight(self) -> None:
+        """Make one tiny API call to verify key, billing and model before a run.
+
+        Raises:
+            FatalAPIError: If the provider rejects the call for a reason
+                retrying cannot fix (billing, auth, unknown model).
+        """
+        try:
+            self.generate(
+                "Reply with the single word OK.",
+                generation_config={"max_output_tokens": 256},
+                rate_limit_delay=0,
+            )
+        except FatalAPIError:
+            raise
+        except Exception as e:
+            if is_fatal_api_error(e):
+                raise FatalAPIError(str(e)) from e
+            # Transient problems are left to per-file retries and the circuit breaker
+            print(f"Warning: preflight check failed ({e}); continuing")
 
     def supports_video(self) -> bool:
         """Whether this provider supports native video upload."""

@@ -38,6 +38,7 @@ from taster.classification import (
     Router,
 )
 from taster.pipelines import MixedPipeline, PhotoPipeline, DocumentPipeline
+from taster.core.ai_client import FatalAPIError
 
 
 def parse_arguments():
@@ -295,11 +296,16 @@ def main():
         config, profile, cache_manager, gemini_client
     )
     start_time = time.time()
-    result = pipeline.run(
-        folder, output_base, config.system.dry_run,
-        classify_videos=config.classification.classify_videos,
-        classify_bundles=getattr(args, 'bundles', False)
-    )
+    try:
+        result = pipeline.run(
+            folder, output_base, config.system.dry_run,
+            classify_videos=config.classification.classify_videos,
+            classify_bundles=getattr(args, 'bundles', False)
+        )
+    except FatalAPIError as e:
+        from taster.cli import _print_fatal_api_error
+        _print_fatal_api_error(e)
+        sys.exit(1)
     result.elapsed_seconds = time.time() - start_time
 
     # Generate reports

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from PIL import Image
 
-from ..ai_client import AIClient, AIResponse
+from ..ai_client import AIClient, AIResponse, FatalAPIError, is_fatal_api_error
 from ..media_prep import ImageEncoder, VideoFrameExtractor
 
 
@@ -186,6 +186,8 @@ class AnthropicProvider(AIClient):
             except Exception as e:
                 last_error = e
                 error_str = str(e).lower()
+                if is_fatal_api_error(e):
+                    raise FatalAPIError(f"Anthropic API error: {e}") from e
                 if any(kw in error_str for kw in ("rate", "overloaded", "timeout", "connection", "unavailable")):
                     delay = self.retry_delay * (2 ** attempt)
                     print(f"Warning: Anthropic error, retrying in {delay}s: {e}")

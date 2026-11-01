@@ -11,7 +11,7 @@ from PIL import Image
 # Suppress proto warning for unrecognized FinishReason enum values (e.g. 19)
 warnings.filterwarnings("ignore", message="Unrecognized FinishReason", category=UserWarning)
 
-from .ai_client import AIClient, AIResponse
+from .ai_client import AIClient, AIResponse, FatalAPIError, is_fatal_api_error
 from ..compat import require
 
 
@@ -62,7 +62,7 @@ class GeminiClient(AIClient):
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model_name: str = "gemini-3-flash-preview",
+        model_name: str = "gemini-3.8-flash",
         max_retries: int = 3,
         retry_delay: float = 2.0,
         timeout: float = 120.0,
@@ -218,6 +218,10 @@ class GeminiClient(AIClient):
                 last_error = e
                 error_str = str(e).lower()
 
+                # Billing/auth/missing model - retrying cannot help
+                if is_fatal_api_error(e):
+                    raise FatalAPIError(f"Gemini API error: {e}") from e
+
                 # Check if timeout error
                 if "timeout" in error_str or "timed out" in error_str:
                     delay = self.retry_delay * (2 ** attempt)
@@ -358,7 +362,7 @@ class GeminiClient(AIClient):
             return 0
 
 
-def initialize_gemini(api_key: Optional[str] = None, model_name: str = "gemini-3-flash-preview") -> GeminiClient:
+def initialize_gemini(api_key: Optional[str] = None, model_name: str = "gemini-3.8-flash") -> GeminiClient:
     """
     Initialize Gemini client with API key.
 
@@ -386,7 +390,7 @@ class GeminiImageClient:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model_name: str = "gemini-3-pro-image-preview",
+        model_name: str = "gemini-3-pro-image",
         max_output_tokens: int = 8192,
         max_retries: int = 2,
         retry_delay: float = 2.0,
@@ -396,7 +400,7 @@ class GeminiImageClient:
 
         Args:
             api_key: Gemini API key. If None, reads from GEMINI_API_KEY env var.
-            model_name: Model for image generation (default: gemini-3-pro-image-preview).
+            model_name: Model for image generation (default: gemini-3-pro-image).
             max_output_tokens: Maximum output tokens for image generation.
             max_retries: Maximum number of retries.
             retry_delay: Initial retry delay in seconds.

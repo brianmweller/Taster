@@ -9,7 +9,7 @@ from dataclasses import dataclass, field, asdict
 @dataclass
 class ModelConfig:
     """Model configuration."""
-    name: str = "gemini-3-flash-preview"
+    name: str = "gemini-3.8-flash"
     max_output_tokens: int = 4096
     clip_model: str = "ViT-B-32"
     clip_pretrained: str = "laion2b_s34b_b79k"
@@ -84,6 +84,11 @@ class ClassificationConfig:
     retry_on_errors: List[str] = field(default_factory=lambda: [
         "api_error", "invalid_response", "timeout", "rate_limit"
     ])
+    # Failure safeguards
+    preflight_check: bool = True              # One tiny API call before the run to verify key/billing/model
+    circuit_breaker_window: int = 20          # Number of recent API calls to watch
+    circuit_breaker_error_rate: float = 0.5   # Abort if this fraction of the window failed (0 disables)
+    error_destination: Optional[str] = "Errors"  # Folder for error fallbacks (None = profile default category)
 
     def __post_init__(self):
         """Validate thresholds."""
@@ -99,6 +104,10 @@ class ClassificationConfig:
             raise ValueError(f"parallel_photo_workers must be >= 1, got {self.parallel_photo_workers}")
         if self.classification_retries < 0:
             raise ValueError(f"classification_retries must be >= 0, got {self.classification_retries}")
+        if self.circuit_breaker_window < 1:
+            raise ValueError(f"circuit_breaker_window must be >= 1, got {self.circuit_breaker_window}")
+        if not 0.0 <= self.circuit_breaker_error_rate <= 1.0:
+            raise ValueError(f"circuit_breaker_error_rate must be between 0 and 1, got {self.circuit_breaker_error_rate}")
 
 
 @dataclass

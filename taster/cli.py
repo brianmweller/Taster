@@ -185,6 +185,19 @@ def _cmd_init(args: argparse.Namespace) -> None:
     print()
 
 
+def _print_fatal_api_error(e: Exception) -> None:
+    """Explain why a run was aborted and how to recover."""
+    print("\n" + "=" * 60)
+    print("CLASSIFICATION ABORTED")
+    print("=" * 60)
+    print(f"  {e}")
+    print()
+    print("  Likely causes: API credits depleted or not yet active, invalid API key,")
+    print("  or the configured model was retired. Fix the cause and re-run; files")
+    print("  already classified are cached and won't be re-billed.")
+    print("=" * 60)
+
+
 def _cmd_classify(args: argparse.Namespace) -> None:
     """Classify files in a folder."""
     from dotenv import load_dotenv
@@ -195,6 +208,7 @@ def _cmd_classify(args: argparse.Namespace) -> None:
     from taster.core.cache import CacheManager
     from taster.core.file_utils import FileTypeRegistry
     from taster.core.profiles import ProfileManager
+    from taster.core.ai_client import FatalAPIError
     from taster.core.provider_factory import create_ai_client
     from taster.pipelines import MixedPipeline
 
@@ -289,11 +303,15 @@ def _cmd_classify(args: argparse.Namespace) -> None:
     import time
     pipeline = MixedPipeline(config, profile, cache_manager, client)
     start = time.time()
-    result = pipeline.run(
-        folder, output_base, config.system.dry_run,
-        classify_videos=config.classification.classify_videos,
-        classify_bundles=True if getattr(args, 'bundles', False) else (False if getattr(args, 'no_bundles', False) else None),
-    )
+    try:
+        result = pipeline.run(
+            folder, output_base, config.system.dry_run,
+            classify_videos=config.classification.classify_videos,
+            classify_bundles=True if getattr(args, 'bundles', False) else (False if getattr(args, 'no_bundles', False) else None),
+        )
+    except FatalAPIError as e:
+        _print_fatal_api_error(e)
+        sys.exit(1)
     result.elapsed_seconds = time.time() - start
 
     if result.results:

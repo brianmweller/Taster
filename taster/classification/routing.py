@@ -38,6 +38,12 @@ class Router:
         self.client = gemini_client
         self.profile = profile
 
+    def _error_destination(self, classification: Dict[str, Any]) -> Optional[str]:
+        """Return the error folder for failed classifications, or None to route normally."""
+        if classification.get("is_error_fallback"):
+            return self.config.classification.error_destination
+        return None
+
     def route_singleton(self, classification: Dict[str, Any]) -> str:
         """
         Route a singleton photo based on classification.
@@ -48,6 +54,10 @@ class Router:
         Returns:
             Destination folder: "Share", "Storage", "Review", or "Ignore".
         """
+        error_dest = self._error_destination(classification)
+        if error_dest:
+            return error_dest
+
         # Extract fields
         category = classification.get("classification", "Review")
         score = classification.get("score", 2)
@@ -118,6 +128,11 @@ class Router:
             photo_path = burst_photos[i]
             classification = classifications[i]
             rank = classification.get("rank", i + 1)
+
+            error_dest = self._error_destination(classification)
+            if error_dest:
+                destinations.append(error_dest)
+                continue
 
             # Extract fields
             category = classification.get("classification", "Review")
@@ -341,6 +356,10 @@ Respond with JSON:
         Returns:
             Destination category name.
         """
+        error_dest = self._error_destination(classification)
+        if error_dest:
+            return error_dest
+
         category = classification.get("classification", "Review")
         score = classification.get("score", 2)
 
